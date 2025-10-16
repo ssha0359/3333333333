@@ -55,7 +55,7 @@ public class Main {
                 case "1": doCustomerFlow(loginUC, catalog, cartSvc, checkout, viewProfileUC, accountSvc, memberSvc, stores,products,
                          pricing,
                          profile, memberHist, orders); break;
-                case "2": doAdminFlow(loginUC, adminSvc, catalog); break;
+                case "2": doAdminFlow(loginUC, adminSvc, catalog,users); break;
                 default: System.out.println("Unknown option");
             }
         }
@@ -156,12 +156,11 @@ public class Main {
                 String nm = (p.name == null ? "Unknown" : p.name);
                 if (nm.length() > 24) nm = nm.substring(0, 23) + "…";
 
-                double unit = pricing.unitPrice(p, isMember);
+                double unit = pricing.unitPrice(p, isMember);   // effective unit (member or regular)
                 double line = unit * i.quantity;
                 subtotal += line;
 
-                System.out.printf(java.util.Locale.US,
-                        "%-6s %-24s %6d %10.2f %12.2f %12.2f%n",
+                System.out.printf(java.util.Locale.US, "%-6s %-24s %6d %10.2f %12.2f %12.2f%n",
                         p.id, nm, i.quantity, unit, line, p.memberPrice);
             }
 
@@ -170,24 +169,39 @@ public class Main {
                     "", "Subtotal", "", "", subtotal, "");
 
             System.out.println("1) Add");
-            System.out.println("2) Remove");
-            System.out.println("3) Clear");
+            System.out.println("2) Edit quantity");
+            System.out.println("3) Remove");
+            System.out.println("4) Clear");
             System.out.println("0) Back");
             System.out.print("> ");
             String c = sc.nextLine().trim();
+
             if ("0".equals(c)) break;
-            if ("1".equals(c)) {
-                System.out.print("productId: "); String pid = sc.nextLine();
-                System.out.print("qty: "); int q = Integer.parseInt(sc.nextLine());
-                System.out.println(cartSvc.add(email, pid, q));
-            } else if ("2".equals(c)) {
-                System.out.print("productId: "); String pid = sc.nextLine();
-                System.out.println(cartSvc.remove(email, pid) ? "Removed" : "Not found");
-            } else if ("3".equals(c)) {
-                cartSvc.clear(email); System.out.println("Cleared");
+
+            switch (c) {
+                case "1" -> {
+                    System.out.print("productId: "); String pid = sc.nextLine().trim();
+                    System.out.print("qty: "); int q = Integer.parseInt(sc.nextLine().trim());
+                    System.out.println(cartSvc.add(email, pid, q));
+                }
+                case "2" -> { // NEW: edit quantity
+                    System.out.print("productId: "); String pid = sc.nextLine().trim();
+                    System.out.print("new qty (0 = remove): "); int q = Integer.parseInt(sc.nextLine().trim());
+                    System.out.println(cartSvc.editQuantity(email, pid, q));
+                }
+                case "3" -> {
+                    System.out.print("productId: "); String pid = sc.nextLine().trim();
+                    System.out.println(cartSvc.remove(email, pid) ? "Removed" : "Not found");
+                }
+                case "4" -> {
+                    cartSvc.clear(email);
+                    System.out.println("Cleared");
+                }
+                default -> { /* ignore */ }
             }
         }
     }
+
 
 
     private static void doCheckout(String email, CartService cartSvc, CheckoutService checkout, StoresRepo stores) throws Exception {
@@ -219,39 +233,99 @@ public class Main {
         }
     }
 
-    private static void doMembership(String email, MembershipService memberSvc, MembershipHistoryRepo memberHist){
+    private static void doMembership(String email,
+                                     MembershipService memberSvc,
+                                     MembershipHistoryRepo memberHist) {
         while (true) {
             System.out.println("-- Membership --");
-            System.out.println("1) Purchase");
-            System.out.println("2) Renew");
+            System.out.println("1) Purchase (multi-year)");
+            System.out.println("2) Renew (multi-year)");
             System.out.println("3) Cancel");
             System.out.println("0) Back");
             System.out.print("> ");
             String c = sc.nextLine().trim();
             if ("0".equals(c)) break;
 
-            String msg = switch (c) {
-                case "1" -> memberSvc.purchase(email);
-                case "2" -> memberSvc.renew(email);
-                case "3" -> memberSvc.cancel(email);
-                default -> "Unknown option";
-            };
-            System.out.println(msg);
-
-            boolean ok = !(msg == null || msg.isBlank() || msg.toLowerCase().startsWith("insufficient") || msg.toLowerCase().startsWith("unknown"));
-            if (ok) {
-                String action = switch (c) {
-                    case "1" -> "PURCHASE";
-                    case "2" -> "RENEW";
-                    case "3" -> "CANCEL";
-                    default -> "OTHER";
-                };
-                int years = ("3".equals(c) ? 0 : 1);   // cancel: 0 year, purchase/renew: 1 year
-                double amount = ("3".equals(c) ? 0.0 : 20.0); // adjust if your annual fee differs
-                memberHist.append(email, action, years, amount, java.time.LocalDate.now());
+            switch (c) {
+                case "1" -> {
+                    Integer years = askYears();
+                    if (years == null) break; // back
+                    int success = 0;
+                    String lastMsg = "";
+                    for (int i = 0; i < years; i++) {
+                        lastMsg = memberSvc.purchase(email);
+                        if (lastMsg == null || lastMsg.toLowerCase().startsWith("insufficient")) break;
+                        success++;
+                    }
+                    if (success == years) {
+                        System.out.println("Purchased " + years + " year(s).");
+                        if (memberHist != null) {
+                            memberHist.append(email, "PURCHASE", years, 20.0 * years, java.time.LocalDate.now());
+                        }
+                    } else if (success > 0) {
+                        System.out.println("Partially purchased " + success + " year(s). Balance may be low.");
+                        if (memberHist != null) {
+                            memberHist.append(email, "PURCHASE", success, 20.0 * success, java.time.LocalDate.now());
+                        }
+                    } else {
+                        System.out.println(lastMsg == null ? "Failed" : lastMsg);
+                    }
+                }
+                case "2" -> {
+                    Integer years = askYears();
+                    if (years == null) break; // back
+                    int success = 0;
+                    String lastMsg = "";
+                    for (int i = 0; i < years; i++) {
+                        lastMsg = memberSvc.renew(email);
+                        if (lastMsg == null || lastMsg.toLowerCase().startsWith("insufficient")) break;
+                        success++;
+                    }
+                    if (success == years) {
+                        System.out.println("Renewed " + years + " year(s).");
+                        if (memberHist != null) {
+                            memberHist.append(email, "RENEW", years, 20.0 * years, java.time.LocalDate.now());
+                        }
+                    } else if (success > 0) {
+                        System.out.println("Partially renewed " + success + " year(s). Balance may be low.");
+                        if (memberHist != null) {
+                            memberHist.append(email, "RENEW", success, 20.0 * success, java.time.LocalDate.now());
+                        }
+                    } else {
+                        System.out.println(lastMsg == null ? "Failed" : lastMsg);
+                    }
+                }
+                case "3" -> {
+                    String msg = memberSvc.cancel(email);
+                    System.out.println(msg);
+                    if (msg != null && !msg.toLowerCase().startsWith("insufficient")) {
+                        if (memberHist != null) {
+                            memberHist.append(email, "CANCEL", 0, 0.0, java.time.LocalDate.now());
+                        }
+                    }
+                }
+                default -> { /* ignore */ }
             }
         }
     }
+
+    private static Integer askYears() {
+        System.out.print("Years (enter 'b' to back): ");
+        String s = sc.nextLine().trim();
+        if (s.equalsIgnoreCase("b")) return null;
+        try {
+            int y = Integer.parseInt(s);
+            if (y <= 0) { System.out.println("Years must be >= 1"); return null; }
+            // 可选：上限保护，比如最多 10 年
+            if (y > 10) { System.out.println("Max 10 years allowed; using 10."); y = 10; }
+            return y;
+        } catch (Exception e) {
+            System.out.println("Invalid number");
+            return null;
+        }
+    }
+
+
 
 
     private static void doFilter(CatalogService catalog){
@@ -274,7 +348,7 @@ public class Main {
 
     }
 
-    private static void doAdminFlow(LoginUser loginUC, AdminService adminSvc, CatalogService catalog){
+    private static void doAdminFlow(LoginUser loginUC, AdminService adminSvc, CatalogService catalog, UsersRepo users){
         System.out.print("Admin email: "); String email = sc.nextLine().trim();
         System.out.print("Password: "); String pwd = sc.nextLine().trim();
         if (!loginUC.asAdmin(email, pwd)) { System.out.println("Login failed."); return; }
@@ -296,13 +370,14 @@ public class Main {
                 case "2" -> { var p = readProduct(); System.out.println(adminSvc.addProduct(p)); }
                 case "3" -> { var p = readProduct(); System.out.println(adminSvc.editProduct(p)); }
                 case "4" -> { System.out.print("productId: "); String id = sc.nextLine(); System.out.println(adminSvc.deleteProduct(id)); }
-                case "5" -> { System.out.println("\n-- Admin Profile --");
-                    System.out.println("Email: admin@monash.edu ");
-                    System.out.println("Password: Monash1234! " );           // 显示密码字段，但做了基础脱敏
-                    System.out.println("First Name: Yujie " );
-                    System.out.println("Last Name: Shao " );
-                    System.out.println("Mobile: 123456789 " );
-                    System.out.println(); }
+                case "5" -> {
+                    var profile = users.getAdminProfileByEmail(email);
+                    if (profile == null) System.out.println("(Profile not found)");
+                    else {
+                        System.out.println("\n-- Administrator Profile --");
+                        System.out.println(profile.toString());
+                    }
+                }
                 default -> System.out.println("Unknown option");
             }
         }
@@ -336,20 +411,89 @@ public class Main {
     }
 
 
-    private static Product readProduct(){
-        System.out.print("id: "); String id = sc.nextLine();
-        System.out.print("name: "); String name = sc.nextLine();
-        System.out.print("category: "); String category = sc.nextLine();
-        System.out.print("subcategory: "); String subcategory = sc.nextLine();
-        System.out.print("brand: "); String brand = sc.nextLine();
-        System.out.print("description: "); String description = sc.nextLine();
-        System.out.print("price: "); double price = Double.parseDouble(sc.nextLine());
-        System.out.print("memberPrice: "); double mprice = Double.parseDouble(sc.nextLine());
-        System.out.print("stock: "); int stock = Integer.parseInt(sc.nextLine());
-        System.out.print("expiry (blank if N/A): "); String expiry = sc.nextLine();
-        System.out.print("ingredients (blank if N/A): "); String ingredients = sc.nextLine();
-        System.out.print("storage (blank if N/A): "); String storage = sc.nextLine();
-        System.out.print("allergens (blank if N/A): "); String allergens = sc.nextLine();
-        return new Product(id, name, category, subcategory, brand, description, price, mprice, stock, expiry, ingredients, storage, allergens);
+    private static Product readProduct() {
+        String id = askNonBlank("id");
+        String name = askNonBlank("name");
+        String category = askNonBlank("category");
+
+        System.out.print("subcategory (optional): ");
+        String subcategory = sanitize(sc.nextLine());
+
+        System.out.print("brand (optional): ");
+        String brand = sanitize(sc.nextLine());
+
+        System.out.print("description (optional): ");
+        String description = sanitize(sc.nextLine());
+
+        double price = askDouble("price (>=0)");
+        double mprice = askDouble("memberPrice (>=0, <= price)");
+        while (mprice > price) {
+            System.out.println("memberPrice cannot be greater than price.");
+            mprice = askDouble("memberPrice (>=0, <= price)");
+        }
+
+        int stock = askInt("stock (>=0)");
+
+        System.out.print("expiry (YYYY-MM-DD, blank if N/A): ");
+        String expiry = blankToNull(sc.nextLine().trim());
+
+        System.out.print("ingredients (blank if N/A): ");
+        String ingredients = blankToNull(sanitize(sc.nextLine()));
+
+        System.out.print("storage (blank if N/A): ");
+        String storage = blankToNull(sanitize(sc.nextLine()));
+
+        System.out.print("allergens (blank if N/A): ");
+        String allergens = blankToNull(sanitize(sc.nextLine()));
+
+        return new Product(id, name, category, subcategory, brand, description,
+                price, mprice, stock, expiry, ingredients, storage, allergens);
     }
+
+
+    private static String askNonBlank(String label) {
+        while (true) {
+            System.out.print(label + ": ");
+            String s = sc.nextLine();
+            if (s != null && !s.trim().isBlank()) return sanitize(s);
+            System.out.println(label + " is required.");
+        }
+    }
+
+    private static double askDouble(String label) {
+        while (true) {
+            System.out.print(label + ": ");
+            String s = sc.nextLine().trim();
+            try {
+                double v = Double.parseDouble(s);
+                if (v < 0) { System.out.println("Must be >= 0."); continue; }
+                return v;
+            } catch (Exception e) {
+                System.out.println("Invalid number.");
+            }
+        }
+    }
+
+    private static int askInt(String label) {
+        while (true) {
+            System.out.print(label + ": ");
+            String s = sc.nextLine().trim();
+            try {
+                int v = Integer.parseInt(s);
+                if (v < 0) { System.out.println("Must be >= 0."); continue; }
+                return v;
+            } catch (Exception e) {
+                System.out.println("Invalid integer.");
+            }
+        }
+    }
+
+    private static String sanitize(String s) {
+        return (s == null) ? "" : s.replace(",", " ").trim();
+    }
+
+    private static String blankToNull(String s) {
+        return (s == null || s.isBlank()) ? null : s;
+    }
+
 }
