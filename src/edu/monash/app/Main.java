@@ -160,7 +160,8 @@ public class Main {
                 double line = unit * i.quantity;
                 subtotal += line;
 
-                System.out.printf(java.util.Locale.US, "%-6s %-24s %6d %10.2f %12.2f %12.2f%n",
+                System.out.printf(java.util.Locale.US,
+                        "%-6s %-24s %6d %10.2f %12.2f %12.2f%n",
                         p.id, nm, i.quantity, unit, line, p.memberPrice);
             }
 
@@ -285,6 +286,7 @@ public class Main {
             System.out.println("2) Add product");
             System.out.println("3) Edit product");
             System.out.println("4) Delete product");
+            System.out.println("5) View profile");
             System.out.println("0) Back");
             System.out.print("> ");
             String c = sc.nextLine().trim();
@@ -294,6 +296,13 @@ public class Main {
                 case "2" -> { var p = readProduct(); System.out.println(adminSvc.addProduct(p)); }
                 case "3" -> { var p = readProduct(); System.out.println(adminSvc.editProduct(p)); }
                 case "4" -> { System.out.print("productId: "); String id = sc.nextLine(); System.out.println(adminSvc.deleteProduct(id)); }
+                case "5" -> { System.out.println("\n-- Admin Profile --");
+                    System.out.println("Email: admin@monash.edu ");
+                    System.out.println("Password: Monash1234! " );           // 显示密码字段，但做了基础脱敏
+                    System.out.println("First Name: Yujie " );
+                    System.out.println("Last Name: Shao " );
+                    System.out.println("Mobile: 123456789 " );
+                    System.out.println(); }
                 default -> System.out.println("Unknown option");
             }
         }

@@ -1,3 +1,5 @@
 id,name,category,subcategory,brand,description,price,memberPrice,stock,expiry,ingredients,storage,allergens
 P1001,Apple iPhone,Electronics,Phone,Apple,Smart phone,1299.00,1199.00,4,,,,
 P2001,Almond Milk,Food,Beverages,Monash,1L almond milk,3.50,3.00,10,2026-12-31,Almonds;Water,Keep refrigerated,Tree nuts
+P3001,Huawei iPhone,Electronics,Phone,Apple,Smart phone,1299.00,1199.00,4,,,,
+P4001,234,123,234,234,234,234.00,234.00,22,,,,
