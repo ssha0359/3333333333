@@ -1,0 +1,4 @@
+email,password,role
+student@student.monash.edu,Monash1234!,CUSTOMER
+staff@monash.edu,Monash1234!,CUSTOMER
+admin@monash.edu,Admin1234!,ADMIN
